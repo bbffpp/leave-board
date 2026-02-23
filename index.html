@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="tongyi-design-pc" data-theme="light" style="color-scheme: light !important;">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>休假管理看板 - 診斷修復版</title>
+    <style>
+        :root { --primary: #1a73e8; --bg: #f8f9fa; --border: #dadce0; --text: #333; }
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); padding: 20px; color: var(--text); margin: 0; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+        
+        /* 🚀 診斷視窗 */
+        #debugWindow {
+            background: #1a1a1a; color: #00ff00; padding: 15px; border-radius: 8px;
+            font-family: monospace; font-size: 12px; line-height: 1.6;
+            max-height: 200px; overflow-y: auto; border: 2px solid #444; margin-bottom: 10px;
+        }
+        .debug-entry { border-bottom: 1px solid #333; padding: 4px 0; }
+        .debug-success { color: #00ff00; }
+        .debug-error { color: #ff4d4d; font-weight: bold; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .header h1 { margin: 0; font-size: 24px; color: #444; }
+        .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
+        .status-success { background: #e6f4ea; color: #137333; }
+        .status-error { background: #fce8e6; color: #c5221f; }
+
+        .main-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; min-height: 600px; }
+        .sidebar { background: white; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; height: 80vh; max-height: 800px; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fafafa; border-radius: 8px 8px 0 0; }
+        .sidebar-content { overflow-y: auto; flex: 1; padding: 5px; }
+        
+        .person-item { padding: 10px; margin: 2px 0; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .person-item.selected { background: #e8f0fe; color: var(--primary); }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; font-weight: bold; min-width: 25px; text-align: center; }
+        .bg-green { background: #d7fdd0; color: #006400; }
+        .bg-red { background: #ffd0d0; color: #8b0000; }
+        .sub-text { font-size: 10px; color: #888; text-align: right; margin-top: 2px; }
+
+        .display-area { background: white; border-radius: 8px; border: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; position: relative; }
+        .cal-nav { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;}
+        .nav-btn { background: white; border: 1px solid #ccc; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid #eee; border-radius: 6px; overflow: hidden; flex: 1; }
+        .cal-head { background: #f8f9fa; padding: 10px; text-align: center; font-weight: bold; border-bottom: 1px solid #eee; border-right: 1px solid #eee; font-size: 14px; }
+        .cal-cell { border-right: 1px solid #eee; border-bottom: 1px solid #eee; padding: 5px; min-height: 100px; background: white; }
+        .cal-cell.today { background: #fffbe6; }
+        .event-tag { font-size: 11px; padding: 3px 6px; border-radius: 3px; color: white; margin-bottom: 2px; }
+
+        .config-box { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid var(--border); margin-top: 20px; }
+        .input-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; align-items: end; }
+        .input-wrap input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; background: #f9f9f9; }
+        .btn-reload { padding: 10px 25px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; height: 38px; }
+        .hide { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>📅 員工休假看板 (診斷修復版)</h1>
+        <span id="mainStatus" class="status-badge status-error">❌ 等待同步</span>
+    </div>
+
+    <div id="debugWindow">
+        <div class="debug-info">[系統] 初始化中...</div>
+    </div>
+
+    <div class="main-grid">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <strong>人員列表</strong>
+                <div>
+                    <button onclick="toggleAll(true)" style="cursor:pointer;border:none;background:none;color:var(--primary);">全選</button>
+                    <button onclick="toggleAll(false)" style="cursor:pointer;border:none;background:none;color:var(--primary);">取消</button>
+                </div>
+            </div>
+            <div id="sidebarContent" class="sidebar-content"><div style="padding:20px; text-align:center; color:#999;">等待資料...</div></div>
+        </div>
+
+        <div class="display-area">
+            <div id="loadingMask" class="loading-overlay hide">數據同步中...</div>
+            <div class="cal-nav">
+                <button class="nav-btn" onclick="changeMonth(-1)">◀</button>
+                <h2 id="monthTitle" style="margin:0; min-width:120px; text-align:center;">YYYY-MM</h2>
+                <button class="nav-btn" onclick="changeMonth(1)">▶</button>
+            </div>
+            <div id="calGrid" class="cal-grid"></div>
+        </div>
+    </div>
+
+    <div class="config-box">
+        <div class="input-row">
+            <div class="input-wrap">
+                <label style="font-size:12px; font-weight:bold;">LEAVE 連結</label>
+                <input type="text" id="urlLeave" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTNR2SNeY9HpBp3-PDFArKo9DXVFCcfL-3Ofm78x-Ob0ViJmcM_sYwVvW79ENPJq7eiCB2TwwcgHVGL/pub?gid=0&single=true&output=csv">
+            </div>
+            <div class="input-wrap">
+                <label style="font-size:12px; font-weight:bold;">BALANCE 連結</label>
+                <input type="text" id="urlBal" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTNR2SNeY9HpBp3-PDFArKo9DXVFCcfL-3Ofm78x-Ob0ViJmcM_sYwVvW79ENPJq7eiCB2TwwcgHVGL/pub?gid=1435250554&single=true&output=csv">
+            </div>
+            <button class="btn-reload" onclick="startLoad()">🔄 強制同步</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const debugWin = document.getElementById('debugWindow');
+    function log(msg, type = 'info') {
+        const div = document.createElement('div');
+        div.className = `debug-entry debug-${type}`;
+        div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        debugWin.appendChild(div);
+        debugWin.scrollTop = debugWin.scrollHeight;
+    }
+
+    // 🚀 核心變數初始化 (修正原本 V2 的錯誤)
+    let leaveData = [], balanceData = {}, finalData = {};
+    let uniqueNames = [], selectedNames = new Set(), nameColors = {}, currentDate = new Date();
+    const colors = ['#1967d2', '#c5221f', '#f29900', '#188038', '#8e24aa', '#0097a7', '#f06292', '#5e35b1'];
+
+    window.onload = startLoad;
+
+    async function startLoad() {
+        log("開始同步流程...");
+        const urls = [document.getElementById('urlLeave').value.trim(), document.getElementById('urlBal').value.trim()];
+        const statusBadge = document.getElementById('mainStatus');
+        statusBadge.className = "status-badge status-loading"; statusBadge.innerText = "數據更新中...";
+
+        try {
+            const results = await Promise.all(urls.map((url, i) => fetchSmart(url, i === 0 ? "LEAVE" : "BALANCE")));
+            log("連線成功，開始解析...", "success");
+            
+            processData(parseCSV(results[0], "LEAVE"), parseCSV(results[1], "BALANCE"));
+            
+            statusBadge.className = "status-badge status-success";
+            statusBadge.innerText = "✅ 同步成功";
+            log("看板更新完成！", "success");
+        } catch (err) {
+            log(`錯誤：${err.message}`, "error");
+            statusBadge.className = "status-badge status-error"; statusBadge.innerText = "❌ 同步失敗";
+        }
+    }
+
+    async function fetchSmart(url, label) {
+        log(`嘗試抓取 ${label}...`);
+        // 加上時間戳防止快取
+        const target = url + (url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+        
+        // 通道 1: 優先直連 (Neocities 適用)
+        try {
+            const res = await fetch(target);
+            if (res.ok) {
+                const txt = await res.text();
+                if (validate(txt, label)) return txt;
+            }
+        } catch (e) { log(`[${label}] 直連無回應，切換備用通道...`); }
+
+        // 通道 2: 備用 Proxy (本機或手機適用)
+        try {
+            const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`);
+            if (res.ok) {
+                const txt = await res.text();
+                if (validate(txt, label)) return txt;
+            }
+        } catch (e) { }
+
+        throw new Error(`${label} 無法讀取`);
+    }
+
+    function validate(txt, label) {
+        if (txt.includes("<!DOCTYPE html>") || txt.includes("<html")) {
+            log(`[${label}] ⚠️ 抓到網頁而非資料！`, "error");
+            return false;
+        }
+        log(`[${label}] 下載成功 (${txt.length} 字元)`, "success");
+        return true;
+    }
+
+    function parseCSV(text, label) {
+        const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim() !== "");
+        log(`[${label}] 讀到 ${lines.length} 列`);
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+        return lines.slice(1).map(line => {
+            const row = line.split(',');
+            let obj = {};
+            headers.forEach((h, i) => obj[h] = (row[i] || "").trim().replace(/"/g, ''));
+            return obj;
+        });
+    }
+
+    function processData(leaves, balances) {
+        log("開始計算餘額與假期...");
+        balanceData = {};
+        balances.forEach(row => {
+            const name = findVal(row, 'name'), type = findVal(row, 'type'), bal = findVal(row, 'bal') || findVal(row, 'balance');
+            if (name && type && type.toUpperCase().includes('AL')) balanceData[name] = parseFloat(bal) || 0;
+        });
+
+        leaveData = []; let usage = {};
+        leaves.forEach(row => {
+            const name = findVal(row, 'name'), type = findVal(row, 'type'), dateStr = parseDate(findVal(row, 'date'));
+            if (name && dateStr) {
+                if (type && type.toUpperCase().includes('AL')) usage[name] = (usage[name] || 0) + 1;
+                leaveData.push({ name, date: dateStr, type });
+            }
+        });
+
+        uniqueNames = [...new Set([...Object.keys(balanceData), ...Object.keys(usage)])].sort();
+        finalData = {}; // 🚀 修正：確保變數已被定義
+        uniqueNames.forEach((n, i) => {
+            selectedNames.add(n); nameColors[n] = colors[i % colors.length];
+            const total = balanceData[n] || 0, used = usage[n] || 0;
+            finalData[n] = { total, used, rem: total - used };
+        });
+        currentDate = new Date();
+        renderSidebar(); renderCalendar();
+    }
+
+    function findVal(row, k) { const key = Object.keys(row).find(x => x.includes(k)); return key ? row[key] : null; }
+    function parseDate(s) {
+        const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : null;
+    }
+
+    function renderSidebar() {
+        const cont = document.getElementById('sidebarContent'); cont.innerHTML = "";
+        uniqueNames.forEach(name => {
+            const info = finalData[name];
+            const el = document.createElement('div');
+            el.className = 'person-item ' + (selectedNames.has(name) ? 'selected' : '');
+            el.onclick = () => { selectedNames.has(name) ? selectedNames.delete(name) : selectedNames.add(name); renderSidebar(); renderCalendar(); };
+            let bc = info.rem < 0 ? 'bg-red' : 'bg-green';
+            el.innerHTML = `<div><span class="dot" style="background:${nameColors[name]}"></span><strong>${name}</strong></div>
+                            <div style="text-align:right"><div class="badge ${bc}">餘 ${info.rem}</div><div class="sub-text">總:${info.total} 用:${info.used}</div></div>`;
+            cont.appendChild(el);
+        });
+    }
+
+    function renderCalendar() {
+        const grid = document.getElementById('calGrid'); const title = document.getElementById('monthTitle'); grid.innerHTML = "";
+        const y = currentDate.getFullYear(), m = currentDate.getMonth(); title.innerText = `${y}年 ${m+1}月`;
+        ['日','一','二','三','四','五','六'].forEach(d => { const div = document.createElement('div'); div.className = 'cal-head'; div.innerText = d; grid.appendChild(div); });
+        const first = new Date(y, m, 1).getDay(), days = new Date(y, m+1, 0).getDate();
+        for(let i=0; i<first; i++) grid.appendChild(document.createElement('div'));
+        const today = new Date().toISOString().split('T')[0];
+        for(let d=1; d<=days; d++) {
+            const date = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const cell = document.createElement('div'); cell.className = 'cal-cell ' + (date === today ? 'today' : '');
+            cell.innerHTML = `<span>${d}</span>`;
+            leaveData.forEach(ev => {
+                if(selectedNames.has(ev.name) && ev.date === date) {
+                    const tag = document.createElement('div'); tag.className = 'event-tag';
+                    tag.style.backgroundColor = nameColors[ev.name]; tag.innerText = `${ev.name} (${ev.type})`;
+                    cell.appendChild(tag);
+                }
+            });
+            grid.appendChild(cell);
+        }
+    }
+    function changeMonth(d) { currentDate.setMonth(currentDate.getMonth() + d); renderCalendar(); }
+    function toggleAll(s) { uniqueNames.forEach(n => s ? selectedNames.add(n) : selectedNames.delete(n)); renderSidebar(); renderCalendar(); }
+</script>
+</body>
+</html>
